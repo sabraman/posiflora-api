@@ -1,0 +1,50 @@
+name: Update API Spec
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Run daily at midnight
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install Playwright Browsers
+        run: bunx playwright install chromium
+
+      - name: Fetch OpenAPI Spec
+        run: bun run scripts/fetch-spec.ts
+
+      - name: Check for changes
+        id: git-diff
+        run: |
+          git diff --quiet openapi.json || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Generate TypeScript Client
+        if: steps.git-diff.outputs.changed == 'true'
+        run: bun run generate
+
+      - name: Create Pull Request
+        if: steps.git-diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update openapi spec and generated client"
+          title: "Update OpenAPI Spec & Client"
+          body: "Automated update of OpenAPI spec and generated client."
+          branch: "update-api-spec"
+          base: "main"
