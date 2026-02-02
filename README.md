@@ -35,8 +35,12 @@ Key features:
 
 To run the server:
 ```bash
+export POSIFLORA_API_KEY=your_api_key_here
 bun run dist/server.js
 ```
+
+> [!IMPORTANT]
+> You **must** set the `POSIFLORA_API_KEY` environment variable. Without it, all tool calls will fail with `401 Unauthorized`.
 
 ## Automation
 

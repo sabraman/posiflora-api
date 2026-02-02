@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "fetch-spec": "bun run scripts/fetch-spec.ts",
-    "generate": "bun run scripts/generate.ts",
+    "generate": "bun run scripts/generate.ts && bun run scripts/fix-duplicates.ts",
     "update": "bun run fetch-spec && bun run generate",
     "start": "bun run src/index.ts"
   },

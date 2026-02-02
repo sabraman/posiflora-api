@@ -26,8 +26,17 @@ const server = new McpServer({
 });
 
 const API_URL = openApiSpec.servers?.[0]?.url || "https://api.posiflora.com";
+const apiKey = process.env.POSIFLORA_API_KEY;
+
+if (!apiKey) {
+    console.warn("Warning: POSIFLORA_API_KEY environment variable is not set. API calls will likely fail.");
+}
+
 // @ts-ignore
-const client = createClient<paths>({ baseUrl: API_URL });
+const client = createClient<paths>({
+    baseUrl: API_URL,
+    headers: apiKey ? { "Authorization": `Bearer ${apiKey}` } : undefined
+});
 
 // Helper to convert OpenAPI type to Zod
 function openApiTypeToZod(schema: any): z.ZodType<any> {
