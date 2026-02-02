@@ -32,6 +32,21 @@ if (!apiKey) {
     console.warn("Warning: POSIFLORA_API_KEY environment variable is not set. API calls will likely fail.");
 }
 
+// Middleware helper
+async function withMiddleware<T>(name: string, args: any, fn: () => Promise<T>): Promise<T> {
+    console.error(`[Middleware] Executing tool: ${name}`);
+    const start = Date.now();
+    try {
+        const result = await fn();
+        const duration = Date.now() - start;
+        console.error(`[Middleware] Success: ${name} (${duration}ms)`);
+        return result;
+    } catch (error) {
+        console.error(`[Middleware] Error in ${name}:`, error);
+        throw error;
+    }
+}
+
 // @ts-ignore
 const client = createClient<paths>({
     baseUrl: API_URL,
@@ -211,33 +226,35 @@ for (const [pathUrl, pathItem] of Object.entries(openApiSpec.paths || {})) {
                     }
                 }
 
-                // Execute
-                try {
-                    // @ts-ignore
-                    const { data, error } = await client[method.toUpperCase()](pathUrl, {
-                        params: {
-                            path: Object.keys(params.path).length ? params.path : undefined,
-                            query: Object.keys(params.query).length ? params.query : undefined,
-                        },
-                        body: Object.keys(params.body).length ? params.body : undefined,
-                    });
+                return await withMiddleware(safeToolName, args, async () => {
+                    // Execute
+                    try {
+                        // @ts-ignore
+                        const { data, error } = await client[method.toUpperCase()](pathUrl, {
+                            params: {
+                                path: Object.keys(params.path).length ? params.path : undefined,
+                                query: Object.keys(params.query).length ? params.query : undefined,
+                            },
+                            body: Object.keys(params.body).length ? params.body : undefined,
+                        });
 
-                    if (error) {
+                        if (error) {
+                            return {
+                                content: [{ type: "text", text: `Error: ${JSON.stringify(error)}` }],
+                                isError: true,
+                            };
+                        }
+
                         return {
-                            content: [{ type: "text", text: `Error: ${JSON.stringify(error)}` }],
+                            content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
+                        };
+                    } catch (err: any) {
+                        return {
+                            content: [{ type: "text", text: `Exception: ${err.message}` }],
                             isError: true,
                         };
                     }
-
-                    return {
-                        content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
-                    };
-                } catch (err: any) {
-                    return {
-                        content: [{ type: "text", text: `Exception: ${err.message}` }],
-                        isError: true,
-                    };
-                }
+                });
             }
         );
     }

@@ -1,57 +1,112 @@
-# Posiflora API - LLM-Ready Repository
+# Posiflora API - LLM-Ready Client & MCP Server
 
 **Repository**: [github.com/sabraman/posiflora-api](https://github.com/sabraman/posiflora-api)
 
-This repository provides a typed TypeScript client and MCP Server for the Posiflora API, with automated regeneration capabilities.
+A robust, type-safe TypeScript client and Model Context Protocol (MCP) server for the Posiflora API. Automatically updated via GitHub Actions.
 
-## Features
+## Quick Start
 
-- **Auto-Regeneration**: Periodically fetches the latest OpenAPI spec from the official docs.
-- **Strict Typing**: Generates TypeScript types directly from the OpenAPI spec.
-- **MCP Server**: Exposes API endpoints as "Tools" for LLMs (Claude, Gemini, etc.).
-
-## Usage
-
-### Prerequisites
-
-- [Bun](https://bun.sh/)
-- Playwright (for fetching spec) `bun add -d playwright`
-
-### Scripts
-
-- `bun run fetch-spec`: Scrapes the latest `openapi.json` from [posiflora.com/api/](https://posiflora.com/api/).
-- `bun run generate`: Generates TypeScript client in `src/client.ts`.
-- `bun run update`: Runs both fetch and generate.
-- `bun build src/mcp-server.ts --outfile=dist/server.js --target=bun`: Builds the MCP server.
-
-### MCP Server
-
-The MCP server is located in `src/mcp-server.ts`. It **dynamically loads** the `openapi.json` spec and registers **~150+ tools** automatically.
-
-Key features:
-- **Auto-Registration**: Every API endpoint (e.g., `/v1/customers`) becomes a tool (e.g., `get_customers_list`, `create_customer`).
-- **Dynamic Mapping**: OpenAPI query and path parameters are automatically converted to Zod schemas for tool validation.
-- **Always Up-to-Date**: Since it reads `openapi.json` at runtime, any spec update (via the cron job) instantly updates the available tools.
-
-To run the server:
 ```bash
-export POSIFLORA_API_KEY=your_api_key_here
+bun install
+```
+
+### 1. Using the Typed Client
+
+The client is generated from the OpenAPI spec and provides strict TypeScript types for all ~150 endpoints.
+
+```typescript
+import createClient from "openapi-fetch";
+import type { paths } from "./src/client"; // Generated types
+
+const client = createClient<paths>({
+    baseUrl: "https://api.posiflora.com",
+    headers: {
+        "Authorization": `Bearer ${process.env.POSIFLORA_API_KEY}`
+    }
+});
+
+// Example: Fetch Customer Details (Type-Safe)
+const { data, error } = await client.GET("/v1/customers", {
+    params: {
+        query: {
+            "filter[idBonus]": "123", // Typed query params
+            include: ["bonusGroup"]   // Autocompleted enums
+        }
+    }
+});
+
+if (error) {
+    console.error("API Error:", error); // Error is typed based on spec
+} else {
+    console.log("Customer:", data.data[0].attributes.title);
+}
+```
+
+### 2. Using the MCP Server (LLM Integration)
+
+The MCP server allows AI agents (Claude, Gemini, etc.) to interact with Posiflora tools.
+
+**Run the Server:**
+```bash
+export POSIFLORA_API_KEY=your_key_here
 bun run dist/server.js
 ```
 
-> [!IMPORTANT]
-> You **must** set the `POSIFLORA_API_KEY` environment variable. Without it, all tool calls will fail with `401 Unauthorized`.
+**Tool Invocation Example:**
+An LLM can call `get_order_list` to fetch pending orders:
+```json
+{
+  "name": "get_orders_list",
+  "arguments": {
+    "filter[status]": "new",
+    "include": ["items"]
+  }
+}
+```
 
-## Automation
+## Features Deep Dive
 
-A GitHub Action is configured in `.github/workflows/update-api.yml` to:
-1.  Run daily at midnight.
-2.  Fetch the latest spec.
-3.  Regenerate the client.
-4.  Create a Pull Request if changes are detected.
+### Dynamic Tool Registration
+Instead of hardcoding tools, this server **dynamically parses** `openapi.json` at runtime.
+1.  **Iterates** over all paths in `openapi.json`.
+2.  **Generates** meaningful tool names (e.g., `/v1/orders` -> `get_orders_list`).
+3.  **Maps** parameters to **Zod schemas** for validation.
+4.  Consequently, if the API adds a new endpoint, the MCP server supports it immediately after a spec update.
+
+### Error Handling
+The client uses `openapi-fetch` which returns a discriminated union:
+```typescript
+const { data, error, response } = await client.GET("/v1/orders");
+
+if (error) {
+    // 'error' is strictly typed to the 4xx/5xx responses in openapi.json
+    if (response.status === 401) handleAuthError();
+    if (response.status === 422) handleValidationError(error); // e.g. invalid filters
+    return;
+}
+// 'data' is present and guaranteed to match 200 OK schema
+processOrders(data);
+```
+
+### Middleware & Interception
+The MCP server includes a `withMiddleware` wrapper in `src/mcp-server.ts`. You can modify this function to intercept all tool calls for logging, rate limiting, or modification.
+
+```typescript
+// src/mcp-server.ts
+async function withMiddleware<T>(name: string, args: any, fn: () => Promise<T>) {
+    console.log(`[Log] Tool ${name} called with`, args);
+    // ... add custom logic here ...
+    return await fn();
+}
+```
+
+## Automation & Versioning
+- **Daily Cron**: A GitHub Action runs every midnight.
+- **Fetch & Diff**: It uses Playwright to scrape the latest `openapi.json` from the docs site.
+- **Auto-Update**: If the spec changes, it regenerates `src/client.ts` and creates a PR.
+- **Runtime safety**: The MCP server loads the spec at runtime, ensuring it never crashes due to a mismatch between hardcoded tools and the live API.
 
 ## Project Structure
-
-- `openapi.json`: The Source of Truth.
-- `src/client.ts`: Auto-generated Typed Client.
-- `scripts/`: Maintenance scripts.
+- `src/client.ts`: **Generated** TypeScript definitions (do not edit manually).
+- `src/mcp-server.ts`: The MCP server implementation.
+- `scripts/`: Tools for fetching specs and patching types.
