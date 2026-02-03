@@ -1,0 +1,14 @@
+{
+    "mcpServers": {
+        "posiflora-api": {
+            "command": "bun",
+            "args": [
+                "run",
+                "/Users/sabraman/sandbox/posiflora-api/dist/server.js"
+            ],
+            "env": {
+                "POSIFLORA_API_KEY": "YOUR_API_KEY_HERE"
+            }
+        }
+    }
+}
