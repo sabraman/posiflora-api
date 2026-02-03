@@ -1,0 +1,22 @@
+# Posiflora API - LLM-Ready Client & MCP Server
+
+> A robust, type-safe TypeScript client and Model Context Protocol (MCP) server for the Posiflora API.
+
+## Core Features
+- **MCP Server**: Stdio-based server for dynamic tool discovery.
+- **Zod Mapping**: Automatic conversion of OpenAPI specs to strict Zod schemas.
+- **Resource Templates**: Dynamic URI templates for direct record access.
+- **High Performance**: ~20ms discovery and ~150ms startup.
+
+## Quick Start
+- `bun install`: Install dependencies.
+- `bun run src/mcp-server.ts`: Run the MCP server.
+
+## Documentation
+- [README.md](./README.md): Main documentation and usage guide.
+- [openapi.json](./openapi.json): Source OpenAPI 3.0 specification.
+
+## Developer Tools
+- [Verify Compliance](./scripts/verify-compliance.ts): MCP protocol compliance checker.
+- [Local Benchmark](./scripts/local-benchmark.ts): Performance measurement tool.
+- [Test Tags](./scripts/test-tags.ts): Utility to test tag-based filtering.

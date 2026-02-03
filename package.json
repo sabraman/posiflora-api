@@ -1,26 +1,26 @@
 {
-  "name": "posiflora-api",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "fetch-spec": "bun run scripts/fetch-spec.ts",
-    "generate": "bun run scripts/generate.ts && bun run scripts/fix-duplicates.ts",
-    "update": "bun run fetch-spec && bun run generate",
-    "start": "bun run src/index.ts",
-    "test": "bun test"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "openapi-typescript": "^7.10.1",
-    "playwright": "^1.58.1"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.3",
-    "openapi-fetch": "^0.15.0",
-    "zod": "^4.3.6"
-  }
+	"name": "posiflora-api",
+	"module": "src/index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"fetch-spec": "bun run scripts/fetch-spec.ts",
+		"generate": "bun run scripts/generate.ts && bun run scripts/fix-duplicates.ts",
+		"update": "bun run fetch-spec && bun run generate",
+		"start": "bun run src/index.ts",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"openapi-typescript": "^7.10.1",
+		"playwright": "^1.58.1"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.25.3",
+		"openapi-fetch": "^0.15.0",
+		"zod": "^4.3.6"
+	}
 }

@@ -1,0 +1,77 @@
+# Posiflora API - Full Documentation
+
+> Complete technical details and API surface for the Posiflora MCP server.
+
+## README
+(Note: The content below is aggregated from the project's README.md)
+
+A robust, type-safe TypeScript client and Model Context Protocol (MCP) server for the Posiflora API. Automatically updated via GitHub Actions.
+
+### Quick Start
+```bash
+bun install
+bun run src/mcp-server.ts
+```
+
+### Features
+- **Dynamic Discovery**: Parses ~150 endpoints and registers them as MCP tools in ~20ms.
+- **Fast Startup**: Full server initialization in under 150ms.
+- **Automatic Zod Mapping**: Converts OpenAPI types to strict Zod schemas.
+- **Resource Templates**: Exposes dynamic resources via URI templates (e.g., `posiflora://api/v1/customers/{id}`).
+- **Tag Filtering**: Reduce exposed tools via `POSIFLORA_ENABLED_TAGS`.
+
+---
+
+## Core Logic Summaries
+
+### MCP Server Implementation (`src/create-server.ts`)
+The server uses `@modelcontextprotocol/sdk` to expose ~150 endpoints as tools. Key features:
+- **Dynamic Registration**: Iterates through OpenAPI paths and registers each as an MCP tool.
+- **Argument Flattening**: Converts nested OpenAPI request bodies into flat tool arguments for better LLM prompting.
+- **Resource Templates**: Exposes entities like customers via URI templates: `posiflora://api/v1/customers/{id}`.
+- **Middleware**: Structured logging and error handling for all tool calls.
+
+### Schema Utilities (`src/utils.ts`)
+- `openApiTypeToZod`: Recursively converts OpenAPI schemas to Zod, handling `$ref` resolution, `allOf/oneOf`, and complex validations (regex, min/max).
+- `mapHttpStatusCodeToMcpError`: Standardizes API errors into MCP-compatible error codes.
+
+---
+
+## API Surface (Tags)
+The following API categories are exposed as tools and resources:
+- Auth API
+- Bonus group API
+- Bouquets API
+- Cash reasons API
+- Catalog API
+- Categories API
+- Customer Celebrations API
+- Customer Events API
+- Customer Sources API
+- Customer Stats API
+- Customer preferences API
+- Customers API
+- Customers import API
+- Discount group API
+- Discount reasons API
+- Inventory Items API
+- Movement acts API
+- Orders API
+- Orders Analytics
+- Orders Sources API
+- Orders Tags API
+- Reports API
+- Store Stats API
+- Stores API
+- Workers API
+
+---
+
+## Technical Project Structure
+- `openapi.json`: The source of truth (automatically updated).
+- `src/client.ts`: Generated TypeScript definitions from the OpenAPI spec.
+- `src/create-server.ts`: Core MCP server logic and dynamic registration.
+- `src/mcp-server.ts`: Entry point for stdio transport.
+- `src/utils.ts`: Internal helpers for Zod conversion and error mapping.
+- `scripts/verify-compliance.ts`: MCP protocol compliance checker.
+- `scripts/local-benchmark.ts`: Performance measurement tool.
