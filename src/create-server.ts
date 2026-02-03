@@ -8,6 +8,41 @@ import { z } from "zod";
 import type { paths } from "./client.js";
 import { mapHttpStatusCodeToMcpError, openApiTypeToZod } from "./utils.js";
 
+// Simple rate limiter implementation
+class RateLimiter {
+	private tokens: number;
+	private lastRefill: number;
+	private readonly maxTokens: number;
+	private readonly refillRate: number; // tokens per ms
+
+	constructor(rps: number) {
+		this.maxTokens = rps;
+		this.tokens = rps;
+		this.refillRate = rps / 1000;
+		this.lastRefill = Date.now();
+	}
+
+	async wait() {
+		this.refill();
+		if (this.tokens < 1) {
+			const waitTime = (1 - this.tokens) / this.refillRate;
+			await new Promise((resolve) => setTimeout(resolve, waitTime));
+			this.refill();
+		}
+		this.tokens -= 1;
+	}
+
+	private refill() {
+		const now = Date.now();
+		const delta = now - this.lastRefill;
+		this.tokens = Math.min(
+			this.maxTokens,
+			this.tokens + delta * this.refillRate,
+		);
+		this.lastRefill = now;
+	}
+}
+
 // Log helper
 async function log(
 	server: McpServer,
@@ -80,7 +115,7 @@ export function createPosifloraServer(
 
 	// Add Resource: OpenAPI Spec (Register First)
 	console.error("DEBUG: Registering openapi-spec resource...");
-	server.resource(
+	server.registerResource(
 		"openapi-spec",
 		"posiflora://openapi.json",
 		{
@@ -100,10 +135,15 @@ export function createPosifloraServer(
 		},
 	);
 
+	// Rate limiter configuration
+	const rps = Number.parseInt(process.env.POSIFLORA_RATE_LIMIT_RPS || "5", 10);
+	const limiter = new RateLimiter(rps);
+
 	const client = createClient<paths>({
 		baseUrl: API_URL,
 		headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-		fetch: (input: any, init?: any) => {
+		fetch: async (input: any, init?: any) => {
+			await limiter.wait();
 			const controller = new AbortController();
 			const id = setTimeout(() => controller.abort(), 30000); // 30s timeout
 			const fetchFn = options?.fetch || fetch;
@@ -164,7 +204,7 @@ export function createPosifloraServer(
 				}
 				registeredResourceNames.add(resourceName);
 
-				server.resource(
+				server.registerResource(
 					resourceName,
 					new ResourceTemplate(resourcePath, { list: undefined }),
 					{
@@ -335,7 +375,7 @@ export function createPosifloraServer(
 			}
 			registeredToolNames.add(safeToolName);
 
-			server.tool(safeToolName, description, shape, async (args) => {
+			server.registerTool(safeToolName, { description, inputSchema: shape }, async (args) => {
 				// Separate args into path, query, and body
 				const params: any = { query: {}, path: {}, body: {} };
 
@@ -440,10 +480,11 @@ export function createPosifloraServer(
 	}
 
 	// Register discovery tool: list_tags
-	server.tool(
+	server.registerTool(
 		"list_tags",
-		"Lists all available API categories (tags) that can be used for filtering tools via POSIFLORA_ENABLED_TAGS environment variable.",
-		{},
+		{
+			description: "Lists all available API categories (tags) that can be used for filtering tools via POSIFLORA_ENABLED_TAGS environment variable.",
+		},
 		async () => {
 			const tags = new Set<string>();
 			for (const pathItem of Object.values(openApiSpec.paths || {})) {
@@ -470,10 +511,11 @@ export function createPosifloraServer(
 	);
 
 	// Register discovery tool: get_server_status
-	server.tool(
+	server.registerTool(
 		"get_server_status",
-		"Shows current server configuration, including active tag filters and tool counts.",
-		{},
+		{
+			description: "Shows current server configuration, including active tag filters and tool counts.",
+		},
 		async () => {
 			return {
 				content: [
@@ -497,6 +539,136 @@ export function createPosifloraServer(
 				],
 			};
 		},
+	);
+
+	// Register Prompts
+	server.registerPrompt(
+		"summarize_recent_orders",
+		{
+			argsSchema: {
+				customerId: z.string().optional().describe("Filter by customer ID"),
+				days: z
+					.string()
+					.optional()
+					.describe("Number of days to look back (default 30)"),
+			},
+		},
+		({ customerId, days }) => ({
+			messages: [
+				{
+					role: "user",
+					content: {
+						type: "text",
+						text: `Please summarize the recent orders${customerId ? ` for customer ${customerId}` : ""
+							} for the last ${days || "30"} days.\n\nInstructions:\n1. Use get_orders_list to fetch orders.\n2. Calculate total amount and order count.\n3. List major items or categories if possible.\n4. Highlight any pending or cancelled orders.`,
+					},
+				},
+			],
+		}),
+	);
+
+	server.registerPrompt(
+		"customer_snapshot",
+		{
+			argsSchema: {
+				customerId: z.string().describe("The ID of the customer to analyze"),
+			},
+		},
+		({ customerId }) => ({
+			messages: [
+				{
+					role: "user",
+					content: {
+						type: "text",
+						text: `Give me a quick snapshot of customer ${customerId}.\n\nI need to know:\n1. Their current status and contact info (use get_customer).\n2. Their bonus points balance (use get_customer with bonusGroup included).\n3. Their recent order history (use get_orders_list with filter[idCustomer]).\n4. Any active celebrations or preferences recorded.`,
+					},
+				},
+			],
+		}),
+	);
+
+	server.registerPrompt(
+		"inventory_lookup",
+		{
+			argsSchema: {
+				query: z.string().describe("Search term for items"),
+				storeId: z.string().optional().describe("Optional store ID filter"),
+			},
+		},
+		({ query, storeId }) => ({
+			messages: [
+				{
+					role: "user",
+					content: {
+						type: "text",
+						text: `Locate inventory items matching "${query}"${storeId ? ` in store ${storeId}` : ""
+							}.\n\nSteps:\n1. Search for items using get_inventory_items_list.\n2. For each relevant item, check the current stock levels.\n3. Identify which stores have the highest and lowest availability.\n4. Format the output as a comparative table.`,
+					},
+				},
+			],
+		}),
+	);
+
+	server.registerPrompt(
+		"sales_performance_report",
+		{
+			argsSchema: {
+				dateFrom: z.string().optional().describe("Start date (YYYY-MM-DD)"),
+				dateTo: z.string().optional().describe("End date (YYYY-MM-DD)"),
+				storeId: z.string().optional().describe("Filter by Store ID"),
+			},
+		},
+		({ dateFrom, dateTo, storeId }) => ({
+			messages: [
+				{
+					role: "user",
+					content: {
+						type: "text",
+						text: `Generate a sales performance report${storeId ? ` for store ${storeId}` : ""
+							}${dateFrom ? ` from ${dateFrom}` : ""}${dateTo ? ` to ${dateTo}` : ""
+							}.\n\nInstructions:\n1. Use get_store_stats to get high-level metrics.\n2. Use get_orders_analytics for a breakdown of totals, discounts, and order counts over time.\n3. Compare findings with historical averages if possible.\n4. Identify the top 3 best-selling categories using get_categories_list if needed for context.\n5. Summarize the average check and conversion trends.`,
+					},
+				},
+			],
+		}),
+	);
+
+	server.registerPrompt(
+		"low_stock_alerts",
+		{
+			argsSchema: {
+				threshold: z.number().optional().describe("Quantity threshold for 'low stock' (default 10)"),
+				categoryId: z.string().optional().describe("Filter by Category ID"),
+			},
+		},
+		({ threshold, categoryId }) => ({
+			messages: [
+				{
+					role: "user",
+					content: {
+						type: "text",
+						text: `Identify items with critically low stock (below ${threshold || 10} units)${categoryId ? ` in category ${categoryId}` : ""
+							}.\n\nSteps:\n1. Browse the inventory using get_inventory_items_list.\n2. Filter for items where 'stock' or 'quantity' is below the threshold.\n3. For each flagged item, identify its primary supplier/source if available.\n4. Create a prioritized reorder list grouped by category.`,
+					},
+				},
+			],
+		}),
+	);
+
+	server.registerPrompt(
+		"labor_efficiency_audit",
+		{},
+		() => ({
+			messages: [
+				{
+					role: "user",
+					content: {
+						type: "text",
+						text: `Perform a labor efficiency audit across all stores.\n\nInstructions:\n1. Fetch the list of workers using get_workers_list.\n2. Analyze store stats using get_store_stats to see the ratio of orders to active workers if data permits.\n3. Check for any workers with unusual order counts or high refund rates.\n4. Suggest scheduling optimizations based on peak order times identified in historical reports.`,
+					},
+				},
+			],
+		}),
 	);
 
 	return server;

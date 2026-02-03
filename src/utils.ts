@@ -37,11 +37,20 @@ export function openApiTypeToZod(schema: any, spec?: any): z.ZodType<any> {
 				: variants[0];
 	} else if (schema.allOf) {
 		const variants = schema.allOf.map((s: any) => openApiTypeToZod(s, spec));
-		// If all are objects, merge them
-		if (variants.every((v: any) => v instanceof z.ZodObject)) {
-			zodSchema = variants.reduce((acc: any, curr: any) => acc.merge(curr));
+		if (variants.length === 0) {
+			zodSchema = z.any();
+		} else if (variants.length === 1) {
+			zodSchema = variants[0];
 		} else {
-			zodSchema = variants[0]; // Fallback to first
+			// If all are objects, merge them for a cleaner schema
+			if (variants.every((v: any) => v instanceof z.ZodObject)) {
+				zodSchema = variants.reduce((acc: any, curr: any) => acc.merge(curr));
+			} else {
+				// Otherwise use intersections
+				zodSchema = variants.reduce((acc: any, curr: any) =>
+					z.intersection(acc, curr),
+				);
+			}
 		}
 	} else {
 		switch (schema.type) {
