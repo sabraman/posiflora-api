@@ -16,13 +16,16 @@ if (!fs.existsSync(specPath)) {
 }
 const openApiContent = fs.readFileSync(specPath, "utf-8");
 const openApiSpec = JSON.parse(openApiContent);
-const apiKey = process.env.POSIFLORA_API_KEY;
+const apiKey = process.env.POSIFLORA_API_KEY || process.env.POSIFLORA_TOKEN;
+const hasCredentials = process.env.POSIFLORA_USERNAME && process.env.POSIFLORA_PASSWORD;
 
-if (!apiKey) {
+if (!apiKey && !hasCredentials) {
 	// We can't use sendLoggingMessage yet because server isn't connected, so console.warn is fine here for startup.
 	console.warn(
-		"Warning: POSIFLORA_API_KEY environment variable is not set. API calls will likely fail.",
+		"Warning: Neither POSIFLORA_API_KEY/TOKEN nor POSIFLORA_USERNAME/PASSWORD environment variables are set. API calls will fail.",
 	);
+} else if (!apiKey && hasCredentials) {
+	console.error(`Status: API Key missing, will attempt auto-login for user: ${process.env.POSIFLORA_USERNAME}`);
 }
 
 async function main() {

@@ -111,7 +111,7 @@ export function createPosifloraServer(
 		version: "1.0.0",
 	});
 
-	const API_URL = openApiSpec.servers?.[0]?.url || "https://api.posiflora.com";
+	const API_URL = (process.env.POSIFLORA_BASE_URL || openApiSpec.servers?.[0]?.url || "https://api.posiflora.com").replace(/\/$/, "");
 
 	// Add Resource: OpenAPI Spec (Register First)
 	console.error("DEBUG: Registering openapi-spec resource...");
@@ -139,16 +139,65 @@ export function createPosifloraServer(
 	const rps = Number.parseInt(process.env.POSIFLORA_RATE_LIMIT_RPS || "5", 10);
 	const limiter = new RateLimiter(rps);
 
+	// Handle authentication state
+	let currentApiKey = apiKey;
+	const credentials = {
+		username: process.env.POSIFLORA_USERNAME,
+		password: process.env.POSIFLORA_PASSWORD,
+	};
+
+	async function performLogin(fetchFn: typeof fetch): Promise<string | undefined> {
+		if (!credentials.username || !credentials.password) return undefined;
+
+		console.error(`Attempting auto-login for user: ${credentials.username} at ${API_URL}`);
+		try {
+			const response = await fetchFn(`${API_URL}/v1/sessions`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					data: {
+						type: "sessions",
+						attributes: credentials,
+					},
+				}),
+			});
+
+			const data = await response.json();
+			const token = data?.data?.attributes?.accessToken;
+			if (token) {
+				console.error("Auto-login successful");
+				return token;
+			}
+			console.error(`Auto-login failed: ${response.status} - ${data?.errors?.[0]?.detail || "Unknown error"}`);
+		} catch (e) {
+			console.error("Auto-login error:", e);
+		}
+		return undefined;
+	}
+
 	const client = createClient<paths>({
 		baseUrl: API_URL,
-		headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+		headers: currentApiKey ? { Authorization: `Bearer ${currentApiKey}` } : undefined,
 		fetch: async (input: any, init?: any) => {
+			const fetchFn = options?.fetch || fetch;
+
+			// If no token, try to login
+			if (!currentApiKey && credentials.username && credentials.password) {
+				currentApiKey = await performLogin(fetchFn);
+			}
+
 			await limiter.wait();
 			const controller = new AbortController();
 			const id = setTimeout(() => controller.abort(), 30000); // 30s timeout
-			const fetchFn = options?.fetch || fetch;
+
+			const headers = { ...init?.headers };
+			if (currentApiKey) {
+				headers["Authorization"] = `Bearer ${currentApiKey}`;
+			}
+
 			return fetchFn(input, {
 				...init,
+				headers,
 				signal: controller.signal,
 			}).finally(() => clearTimeout(id));
 		},

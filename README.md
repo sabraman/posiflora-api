@@ -18,6 +18,8 @@ The MCP server allows AI agents to interact with ~150 Posiflora tools dynamicall
 **Run the Server:**
 ```bash
 export POSIFLORA_API_KEY=your_key_here
+# OR
+export POSIFLORA_TOKEN=your_token_here
 bun run src/mcp-server.ts
 ```
 
